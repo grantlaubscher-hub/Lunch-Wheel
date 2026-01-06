@@ -49,7 +49,10 @@
 <body>
   <h1>Lunch Wheel 🍔</h1>
   <div class="small">
-    Random takeaway spinner near 260 Queen Street. Default radius is <strong>500m</strong>. Excludes juice/smoothie places.
+    Random takeaway spinner near 260 Queen Street. Default radius is <strong>500m</strong>.
+    <br/>
+    Excludes “juice bar” style venues using a better rule:
+    <code>amenity=juice_bar</code> and <code>shop=juice</code> are excluded (no cuisine-based blocking, so places like Grazegrind can still appear).
   </div>
 
   <div class="row" style="margin-top:14px;">
@@ -73,7 +76,7 @@
       <button id="spin" disabled style="margin-top:10px;">Spin 🎯</button>
 
       <div class="small" style="margin-top:10px;">
-        Duplicate removal: venues are de-duped by <code>name</code> (case/punctuation-insensitive). Example: multiple “KFC” entries collapse into one.
+        Duplicates: de-duped by <code>name</code> (case/punctuation-insensitive), so “KFC” only appears once.
       </div>
     </div>
 
@@ -119,18 +122,12 @@
   }
 
   function normalizeName(name) {
-    // De-dupe by a "canonical" name:
-    // - trim
-    // - lowercase
-    // - remove punctuation/symbols
-    // - collapse whitespace
-    // e.g. "KFC", "KFC " -> "kfc"; "McDonald's" -> "mcdonalds"
     return (name || "")
       .trim()
       .toLowerCase()
-      .replace(/[’']/g, "")            // apostrophes
-      .replace(/[^a-z0-9\s]/g, " ")    // other punctuation -> space
-      .replace(/\s+/g, " ");           // collapse spaces
+      .replace(/[’']/g, "")
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ");
   }
 
   async function geocodeAddress(address) {
@@ -142,15 +139,25 @@
     return { lat: +data[0].lat, lon: +data[0].lon };
   }
 
-  // Lighter query + strict takeaway/takeout + exclude juice/smoothie cuisine
+  /**
+   * Better “exclude juice bars” rule:
+   *  - exclude amenity=juice_bar
+   *  - exclude shop=juice
+   *
+   * IMPORTANT: We DO NOT exclude by cuisine anymore (so smoothie/juice *cuisine* won't automatically remove cafes like Grazegrind).
+   *
+   * Still “takeaway-ish” rules:
+   *  - include fast_food
+   *  - include restaurant/cafe only if takeaway/takeout yes/only
+   */
   function overpassQuery(lat, lon, r) {
-    const EXCL = "juice|smoothie";
     return `
       [out:json][timeout:25];
       (
-        nwr(around:${r},${lat},${lon})[amenity="fast_food"][cuisine!~"${EXCL}"];
-        nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"][cuisine!~"${EXCL}"];
-        nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"][cuisine!~"${EXCL}"];
+        nwr(around:${r},${lat},${lon})[amenity="fast_food"][amenity!="juice_bar"][shop!="juice"];
+
+        nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"][amenity!="juice_bar"][shop!="juice"];
+        nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"][amenity!="juice_bar"][shop!="juice"];
       );
       out center tags;
     `;
@@ -219,7 +226,6 @@
     }
     if (!data) throw (lastErr || new Error("Overpass failed"));
 
-    // Collect raw results
     const raw = [];
     for (const e of (data.elements || [])) {
       const name = e.tags && e.tags.name;
@@ -232,9 +238,8 @@
       raw.push({ name, lat: lat2, lon: lon2 });
     }
 
-    // De-dupe by NORMALIZED NAME only (so "KFC" never appears twice),
-    // and choose the first occurrence (arbitrary, but stable enough for lunch picks).
-    const byName = new Map(); // key: normalizedName -> venue
+    // De-dupe by NORMALIZED NAME only (so "KFC" won't appear twice).
+    const byName = new Map();
     for (const v of raw) {
       const key = normalizeName(v.name);
       if (!key) continue;
@@ -243,7 +248,7 @@
 
     const dedup = Array.from(byName.values());
 
-    // Shuffle so the wheel isn't biased by API ordering
+    // Shuffle
     for (let i = dedup.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [dedup[i], dedup[j]] = [dedup[j], dedup[i]];
@@ -300,7 +305,6 @@
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Label (short)
       const mid = (a0 + a1) / 2;
       const tx = cx + Math.cos(mid) * (r * 0.62);
       const ty = cy + Math.sin(mid) * (r * 0.62);
@@ -395,12 +399,12 @@
       els.links.innerHTML = "";
 
       if (!venues.length) {
-        setStatus("No venues found (strict takeaway + juice exclusion). Try 750m or 1km.", "err");
+        setStatus("No venues found. Try 750m or 1km.", "err");
         return;
       }
 
       setStatus(`Loaded ${venues.length} venues (de-duped by name)`, "ok");
-      els.spin.disabled = (venues.length < 1);
+      els.spin.disabled = false;
     } catch (e) {
       setStatus(e.message || String(e), "err");
     } finally {
