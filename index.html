@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Lunch Wheel</title>
+
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      max-width: 980px;
+      margin-inline: auto;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    @media (min-width: 900px) {
+      .row {
+        grid-template-columns: 420px 1fr;
+        align-items: start;
+      }
+    }
+
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      opacity: .8;
+      margin-bottom: 6px;
+    }
+
+    input, select, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      font-size: 14px;
+    }
+
+    button {
+      cursor: pointer;
+      border: 1px solid #111827;
+      background: #111827;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    .btnrow {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .small {
+      font-size: 12px;
+      opacity: .7;
+      line-height: 1.4;
+    }
+
+    .status {
+      font-size: 13px;
+    }
+
+    .ok { color: #065f46; }
+    .warn { color: #92400e; }
+    .err { color: #991b1b; }
+
+    .wheelwrap {
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+    }
+
+    canvas {
+      width: 360px;
+      height: 360px;
+      border-radius: 999px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .pointer {
+      width: 0;
+      height: 0;
+      border-left: 10px solid transparent;
+      border-right: 10px solid transparent;
+      border-bottom: 18px solid #111827;
+      margin-bottom: -10px;
+    }
+
+    .result {
+      width: 100%;
+      text-align: center;
+    }
+
+    /* 🔵 BIG BLUE RESULT LINK */
+    .result a {
+      color: #2563eb;              /* blue */
+      font-size: 22px;             /* bigger */
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .result a:hover {
+      text-decoration: underline;
+    }
+
+    .links a {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 14px;
+    }
+
+    .list {
+      max-height: 260px;
+      overflow: auto;
+      padding-left: 18px;
+      width: 100%;
+    }
+
+    .list li {
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Lunch Wheel 🍔</h1>
+  <div class="small">Random takeaway spinner within 2km of 260 Queen Street.</div>
+
+  <div class="row" style="margin-top:14px;">
+    <div class="card">
+      <label>Office address</label>
+      <input id="addr" value="260 Queen Street, Brisbane City QLD 4000, Australia" />
+
+      <div class="btnrow" style="margin-top:10px;">
+        <select id="radius">
+          <option value="2000" selected>2km radius</option>
+          <option value="2500">2.5km radius</option>
+          <option value="1500">1.5km radius</option>
+        </select>
+        <button id="load">Load venues</button>
+      </div>
+
+      <div id="status" class="status warn" style="margin-top:10px;">
+        Load venues to begin
+      </div>
+
+      <button id="spin" disabled style="margin-top:10px;">
+        Spin 🎯
+      </button>
+    </div>
+
+    <div class="card wheelwrap">
+      <div class="pointer"></div>
+      <canvas id="wheel" width="720" height="720"></canvas>
+
+      <div id="picked" class="result small">
+        Nothing picked yet
+      </div>
+
+      <div id="links" class="links"></div>
+
+      <div class="small" style="width:100%;"><strong>Loaded venues</strong></div>
+      <ol id="venueList" class="list"></ol>
+    </div>
+  </div>
+
+<script>
+const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+const OVERPASS  = "https://overpass-api.de/api/interpreter";
+
+const els = {
+  addr: document.getElementById("addr"),
+  radius: document.getElementById("radius"),
+  load: document.getElementById("load"),
+  spin: document.getElementById("spin"),
+  status: document.getElementById("status"),
+  wheel: document.getElementById("wheel"),
+  picked: document.getElementById("picked"),
+  links: document.getElementById("links"),
+  venueList: document.getElementById("venueList"),
+};
+
+let venues = [];
+let currentAngle = 0;
+let spinning = false;
+
+function setStatus(msg, cls="warn") {
+  els.status.className = "status " + cls;
+  els.status.textContent = msg;
+}
+
+async function geocodeAddress(address) {
+  const url = `${NOMINATIM}?q=${encodeURIComponent(address)}&format=json&limit=1`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.length) throw new Error("Address not found");
+  return { lat: +data[0].lat, lon: +data[0].lon };
+}
+
+function overpassQuery(lat, lon, r) {
+  return `
+  [out:json][timeout:25];
+  (
+    node(around:${r},${lat},${lon})[amenity="fast_food"];
+    way(around:${r},${lat},${lon})[amenity="fast_food"];
+    relation(around:${r},${lat},${lon})[amenity="fast_food"];
+
+    node(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"];
+    way(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"];
+    relation(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"];
+
+    node(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"];
+    way(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"];
+    relation(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"];
+  );
+  out center tags;
+  `;
+}
+
+async function fetchVenues(lat, lon, r) {
+  const res = await fetch(OVERPASS, { method: "POST", body: overpassQuery(lat, lon, r) });
+  const data = await res.json();
+
+  const seen = new Set();
+  return data.elements
+    .filter(e => e.tags?.name)
+    .map(e => ({
+      name: e.tags.name,
+      lat: e.lat ?? e.center?.lat,
+      lon: e.lon ?? e.center?.lon
+    }))
+    .filter(v => v.lat && v.lon)
+    .filter(v => {
+      const k = `${v.name}${v.lat.toFixed(5)}${v.lon.toFixed(5)}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+}
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function spinWheel(duration = 3000) {
+  if (spinning || venues.length < 2) return;
+  spinning = true;
+  els.spin.disabled = true;
+  els.picked.textContent = "Spinning…";
+  els.links.innerHTML = "";
+
+  const start = performance.now();
+  const startAngle = currentAngle;
+  const rotations = 5 + Math.random() * 2;
+  const endAngle = startAngle + rotations * Math.PI * 2;
+
+  function frame(now) {
+    const t = Math.min((now - start) / duration, 1);
+    currentAngle = startAngle + (endAngle - startAngle) * easeOutCubic(t);
+    drawWheel();
+
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      spinning = false;
+      els.spin.disabled = false;
+
+      const pick = venues[Math.floor(Math.random() * venues.length)];
+      const mapsUrl =
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pick.name)}@${pick.lat},${pick.lon}`;
+
+      els.picked.innerHTML = `<a href="${mapsUrl}" target="_blank">${pick.name}</a>`;
+      els.links.innerHTML =
+        `<a href="https://www.google.com/maps/dir/?api=1&destination=${pick.lat},${pick.lon}&travelmode=walking" target="_blank">
+          Walking directions
+        </a>`;
+    }
+  }
+
+  requestAnimationFrame(frame);
+}
+
+function drawWheel() {
+  const ctx = els.wheel.getContext("2d");
+  const W = els.wheel.width;
+  const cx = W / 2;
+  const r = cx - 12;
+
+  ctx.clearRect(0, 0, W, W);
+
+  if (!venues.length) {
+    ctx.fillText("Load venues", cx - 40, cx);
+    return;
+  }
+
+  const slice = (Math.PI * 2) / venues.length;
+  for (let i = 0; i < venues.length; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cx);
+    ctx.arc(cx, cx, r, currentAngle + i * slice, currentAngle + (i + 1) * slice);
+    ctx.fillStyle = i % 2 ? "#e5e7eb" : "#f3f4f6";
+    ctx.fill();
+  }
+}
+
+els.load.onclick = async () => {
+  try {
+    setStatus("Loading venues…");
+    const { lat, lon } = await geocodeAddress(els.addr.value);
+    venues = await fetchVenues(lat, lon, els.radius.value);
+    els.venueList.innerHTML = venues.map(v => `<li>${v.name}</li>`).join("");
+    els.spin.disabled = venues.length < 2;
+    setStatus(`Loaded ${venues.length} venues`, "ok");
+    drawWheel();
+  } catch (e) {
+    setStatus(e.message, "err");
+  }
+};
+
+els.spin.onclick = () => spinWheel(3000);
+drawWheel();
+</script>
+</body>
+</html>
