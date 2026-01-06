@@ -6,146 +6,45 @@
   <title>Lunch Wheel</title>
 
   <style>
-    :root {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    }
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; padding: 24px; max-width: 980px; margin-inline: auto; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 900px) { .row { grid-template-columns: 420px 1fr; align-items: start; } }
 
-    body {
-      margin: 0;
-      padding: 24px;
-      max-width: 980px;
-      margin-inline: auto;
-    }
-
-    h1 {
-      margin: 0 0 6px;
-      font-size: 22px;
-    }
-
-    .row {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 14px;
-    }
-
-    @media (min-width: 900px) {
-      .row {
-        grid-template-columns: 420px 1fr;
-        align-items: start;
-      }
-    }
-
-    .card {
-      border: 1px solid #e5e7eb;
-      border-radius: 14px;
-      padding: 14px;
-      box-shadow: 0 1px 2px rgba(0,0,0,.04);
-    }
-
-    label {
-      display: block;
-      font-size: 12px;
-      opacity: .8;
-      margin-bottom: 6px;
-    }
-
+    .card { border: 1px solid #e5e7eb; border-radius: 14px; padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    label { display: block; font-size: 12px; opacity: .8; margin-bottom: 6px; }
     input, select, button {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid #d1d5db;
-      font-size: 14px;
+      width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid #d1d5db; font-size: 14px;
     }
+    button { cursor: pointer; border: 1px solid #111827; background: #111827; color: white; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
 
-    button {
-      cursor: pointer;
-      border: 1px solid #111827;
-      background: #111827;
-      color: white;
-    }
-
-    button:disabled {
-      opacity: .5;
-      cursor: not-allowed;
-    }
-
-    .btnrow {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
-    .small {
-      font-size: 12px;
-      opacity: .7;
-      line-height: 1.4;
-    }
-
-    .status {
-      font-size: 13px;
-    }
-
+    .btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .small { font-size: 12px; opacity: .7; line-height: 1.4; }
+    .status { font-size: 13px; }
     .ok { color: #065f46; }
     .warn { color: #92400e; }
     .err { color: #991b1b; }
 
-    .wheelwrap {
-      display: grid;
-      gap: 10px;
-      justify-items: center;
-    }
-
-    canvas {
-      width: 360px;
-      height: 360px;
-      border-radius: 999px;
-      border: 1px solid #e5e7eb;
-    }
-
+    .wheelwrap { display: grid; gap: 10px; justify-items: center; }
+    canvas { width: 360px; height: 360px; border-radius: 999px; border: 1px solid #e5e7eb; }
     .pointer {
-      width: 0;
-      height: 0;
-      border-left: 10px solid transparent;
-      border-right: 10px solid transparent;
-      border-bottom: 18px solid #111827;
-      margin-bottom: -10px;
+      width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent;
+      border-bottom: 18px solid #111827; margin-bottom: -10px;
     }
 
-    .result {
-      width: 100%;
-      text-align: center;
-    }
-
-    /* BIG BLUE RESULT LINK */
+    .result { width: 100%; text-align: center; }
     .result a {
-      color: #2563eb;
-      font-size: 22px;
-      font-weight: 700;
-      text-decoration: none;
+      color: #2563eb; font-size: 22px; font-weight: 700; text-decoration: none;
     }
+    .result a:hover { text-decoration: underline; }
+    .links a { display: inline-block; margin-top: 6px; font-size: 14px; }
 
-    .result a:hover {
-      text-decoration: underline;
-    }
-
-    .links a {
-      display: inline-block;
-      margin-top: 6px;
-      font-size: 14px;
-    }
-
-    .list {
-      max-height: 260px;
-      overflow: auto;
-      padding-left: 18px;
-      width: 100%;
-    }
-
-    .list li {
-      margin-bottom: 6px;
-      font-size: 13px;
-    }
+    .list { max-height: 260px; overflow: auto; padding-left: 18px; width: 100%; }
+    .list li { margin-bottom: 6px; font-size: 13px; }
+    code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
   </style>
 </head>
 
@@ -161,10 +60,10 @@
       <div class="btnrow" style="margin-top:10px;">
         <select id="radius">
           <option value="500" selected>500m radius (default)</option>
+          <option value="750">750m radius</option>
           <option value="1000">1km radius</option>
           <option value="1500">1.5km radius</option>
           <option value="2000">2km radius</option>
-          <option value="2500">2.5km radius</option>
         </select>
         <button id="load">Load venues</button>
       </div>
@@ -178,7 +77,7 @@
       </button>
 
       <div class="small" style="margin-top:10px;">
-        Strict takeaway filtering + excludes juice bars by OSM tagging (often <code>cuisine=juice</code>). :contentReference[oaicite:0]{index=0}
+        If Overpass times out (504), this app will auto-retry on a mirror endpoint.
       </div>
     </div>
 
@@ -186,10 +85,7 @@
       <div class="pointer"></div>
       <canvas id="wheel" width="720" height="720"></canvas>
 
-      <div id="picked" class="result small">
-        Nothing picked yet
-      </div>
-
+      <div id="picked" class="result small">Nothing picked yet</div>
       <div id="links" class="links"></div>
 
       <div class="small" style="width:100%;"><strong>Loaded venues</strong></div>
@@ -198,264 +94,4 @@
   </div>
 
 <script>
-const NOMINATIM = "https://nominatim.openstreetmap.org/search";
-const OVERPASS  = "https://overpass-api.de/api/interpreter";
-
-const els = {
-  addr: document.getElementById("addr"),
-  radius: document.getElementById("radius"),
-  load: document.getElementById("load"),
-  spin: document.getElementById("spin"),
-  status: document.getElementById("status"),
-  wheel: document.getElementById("wheel"),
-  picked: document.getElementById("picked"),
-  links: document.getElementById("links"),
-  venueList: document.getElementById("venueList"),
-};
-
-let venues = [];
-let currentAngle = 0;
-let spinning = false;
-
-function setStatus(msg, cls="warn") {
-  els.status.className = "status " + cls;
-  els.status.textContent = msg;
-}
-
-async function geocodeAddress(address) {
-  const url = `${NOMINATIM}?q=${encodeURIComponent(address)}&format=json&limit=1`;
-  const res = await fetch(url, { headers: { "Accept": "application/json" } });
-  if (!res.ok) throw new Error(`Geocode failed (${res.status})`);
-  const data = await res.json();
-  if (!data.length) throw new Error("Address not found. Try a more specific address.");
-  return { lat: +data[0].lat, lon: +data[0].lon };
-}
-
-/**
- * Strict takeaway query (fast_food, or restaurant/cafe with takeaway/takeout tags)
- * Exclude juice bars via cuisine=juice (often used for juice bars) and also exclude smoothie-ish cuisine tags.
- * Note: tagging varies; this is a best-effort filter.
- */
-function overpassQuery(lat, lon, r) {
-  // Exclusion regex (lowercase is typical in OSM tagging)
-  const EXCL_CUISINE = "juice|smoothie";
-
-  return `
-  [out:json][timeout:25];
-  (
-    node(around:${r},${lat},${lon})[amenity="fast_food"][cuisine!~"${EXCL_CUISINE}"];
-    way(around:${r},${lat},${lon})[amenity="fast_food"][cuisine!~"${EXCL_CUISINE}"];
-    relation(around:${r},${lat},${lon})[amenity="fast_food"][cuisine!~"${EXCL_CUISINE}"];
-
-    node(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"][cuisine!~"${EXCL_CUISINE}"];
-    way(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"][cuisine!~"${EXCL_CUISINE}"];
-    relation(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"][cuisine!~"${EXCL_CUISINE}"];
-
-    node(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"][cuisine!~"${EXCL_CUISINE}"];
-    way(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"][cuisine!~"${EXCL_CUISINE}"];
-    relation(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"][cuisine!~"${EXCL_CUISINE}"];
-  );
-  out center tags;
-  `;
-}
-
-async function fetchVenues(lat, lon, r) {
-  const res = await fetch(OVERPASS, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/plain;charset=UTF-8",
-      "Accept": "application/json"
-    },
-    body: overpassQuery(lat, lon, r)
-  });
-
-  if (!res.ok) throw new Error(`Overpass failed (${res.status})`);
-  const data = await res.json();
-
-  const out = [];
-  for (const e of (data.elements || [])) {
-    const name = e.tags && e.tags.name;
-    if (!name) continue;
-
-    const lat2 = (typeof e.lat === "number") ? e.lat : (e.center && e.center.lat);
-    const lon2 = (typeof e.lon === "number") ? e.lon : (e.center && e.center.lon);
-    if (typeof lat2 !== "number" || typeof lon2 !== "number") continue;
-
-    out.push({ name, lat: lat2, lon: lon2 });
-  }
-
-  // Deduplicate by name + rounded coords
-  const seen = new Set();
-  const dedup = [];
-  for (const v of out) {
-    const key = `${v.name}::${v.lat.toFixed(5)}::${v.lon.toFixed(5)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    dedup.push(v);
-  }
-
-  // Shuffle so the wheel isn't biased by API ordering
-  for (let i = dedup.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [dedup[i], dedup[j]] = [dedup[j], dedup[i]];
-  }
-
-  return dedup;
-}
-
-function drawWheel() {
-  const ctx = els.wheel.getContext("2d");
-  const W = els.wheel.width;
-  const cx = W / 2, cy = W / 2;
-  const r = W / 2 - 12;
-
-  ctx.clearRect(0, 0, W, W);
-
-  // background circle
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = "#ffffff";
-  ctx.fill();
-  ctx.strokeStyle = "#e5e7eb";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  if (!venues.length) {
-    ctx.fillStyle = "#6b7280";
-    ctx.font = "28px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("Load venues", cx, cy);
-    return;
-  }
-
-  const n = venues.length;
-  const slice = (Math.PI * 2) / n;
-
-  for (let i = 0; i < n; i++) {
-    const a0 = currentAngle + i * slice;
-    const a1 = a0 + slice;
-
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, a0, a1);
-    ctx.closePath();
-    ctx.fillStyle = (i % 2 === 0) ? "#f3f4f6" : "#e5e7eb";
-    ctx.fill();
-
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // label (short)
-    const mid = (a0 + a1) / 2;
-    const tx = cx + Math.cos(mid) * (r * 0.62);
-    const ty = cy + Math.sin(mid) * (r * 0.62);
-
-    ctx.save();
-    ctx.translate(tx, ty);
-    ctx.rotate(mid);
-    ctx.fillStyle = "#111827";
-    ctx.font = "16px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const label = venues[i].name.length > 18 ? venues[i].name.slice(0, 17) + "…" : venues[i].name;
-    ctx.fillText(label, 0, 0);
-    ctx.restore();
-  }
-
-  // center cap
-  ctx.beginPath();
-  ctx.arc(cx, cy, 42, 0, Math.PI * 2);
-  ctx.fillStyle = "#111827";
-  ctx.fill();
-}
-
-function easeOutCubic(t) {
-  return 1 - Math.pow(1 - t, 3);
-}
-
-function spinWheel(durationMs = 3000) {
-  if (spinning || venues.length < 2) return;
-
-  spinning = true;
-  els.spin.disabled = true;
-  els.load.disabled = true;
-  els.picked.textContent = "Spinning…";
-  els.links.innerHTML = "";
-
-  const start = performance.now();
-  const startAngle = currentAngle;
-
-  // Dramatic spin: 5–7 full turns
-  const rotations = 5 + Math.random() * 2;
-  const endAngle = startAngle + rotations * Math.PI * 2;
-
-  function frame(now) {
-    const t = Math.min((now - start) / durationMs, 1);
-    currentAngle = startAngle + (endAngle - startAngle) * easeOutCubic(t);
-    drawWheel();
-
-    if (t < 1) {
-      requestAnimationFrame(frame);
-    } else {
-      spinning = false;
-      els.spin.disabled = false;
-      els.load.disabled = false;
-
-      const pick = venues[Math.floor(Math.random() * venues.length)];
-      const mapsUrl =
-        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pick.name)}@${pick.lat},${pick.lon}`;
-
-      els.picked.innerHTML = `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">${pick.name}</a>`;
-      els.links.innerHTML = `
-        <a href="https://www.google.com/maps/dir/?api=1&destination=${pick.lat},${pick.lon}&travelmode=walking"
-           target="_blank" rel="noopener noreferrer">
-           Walking directions
-        </a>
-      `;
-    }
-  }
-
-  requestAnimationFrame(frame);
-}
-
-els.load.onclick = async () => {
-  try {
-    els.load.disabled = true;
-    els.spin.disabled = true;
-    setStatus("Geocoding address…", "warn");
-
-    const { lat, lon } = await geocodeAddress(els.addr.value);
-
-    const r = parseInt(els.radius.value, 10);
-    setStatus(`Fetching takeaway venues within ${r}m…`, "warn");
-
-    venues = await fetchVenues(lat, lon, r);
-
-    drawWheel();
-    els.venueList.innerHTML = venues.map(v => `<li>${v.name}</li>`).join("");
-
-    if (!venues.length) {
-      setStatus("No venues found (strict takeaway + juice exclusion is tight). Try increasing the radius.", "err");
-      els.picked.textContent = "Nothing picked yet";
-      els.links.innerHTML = "";
-      return;
-    }
-
-    setStatus(`Loaded ${venues.length} venues`, "ok");
-    els.spin.disabled = (venues.length < 2);
-    els.picked.textContent = "Ready. Hit Spin 🎯";
-    els.links.innerHTML = "";
-  } catch (e) {
-    setStatus(e.message || String(e), "err");
-  } finally {
-    els.load.disabled = false;
-  }
-};
-
-els.spin.onclick = () => spinWheel(3000);
-drawWheel();
-</script>
-</body>
-</html>
+  const NOMINATIM = "https:/
