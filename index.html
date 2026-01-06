@@ -1,3 +1,4 @@
+```html
 <!doctype html>
 <html lang="en">
 <head>
@@ -36,9 +37,7 @@
     }
 
     .result { width: 100%; text-align: center; }
-    .result a {
-      color: #2563eb; font-size: 22px; font-weight: 700; text-decoration: none;
-    }
+    .result a { color: #2563eb; font-size: 22px; font-weight: 700; text-decoration: none; }
     .result a:hover { text-decoration: underline; }
     .links a { display: inline-block; margin-top: 6px; font-size: 14px; }
 
@@ -50,7 +49,9 @@
 
 <body>
   <h1>Lunch Wheel 🍔</h1>
-  <div class="small">Random takeaway spinner near 260 Queen Street.</div>
+  <div class="small">
+    Random takeaway spinner near 260 Queen Street. Default radius is <strong>500m</strong>. Excludes juice/smoothie places.
+  </div>
 
   <div class="row" style="margin-top:14px;">
     <div class="card">
@@ -68,16 +69,12 @@
         <button id="load">Load venues</button>
       </div>
 
-      <div id="status" class="status warn" style="margin-top:10px;">
-        Load venues to begin
-      </div>
+      <div id="status" class="status warn" style="margin-top:10px;">Load venues to begin</div>
 
-      <button id="spin" disabled style="margin-top:10px;">
-        Spin 🎯
-      </button>
+      <button id="spin" disabled style="margin-top:10px;">Spin 🎯</button>
 
       <div class="small" style="margin-top:10px;">
-        If Overpass times out (504), this app will auto-retry on a mirror endpoint.
+        No repeats: each venue can win once per load. Click <strong>Load venues</strong> again to reset the pool.
       </div>
     </div>
 
@@ -88,15 +85,13 @@
       <div id="picked" class="result small">Nothing picked yet</div>
       <div id="links" class="links"></div>
 
-      <div class="small" style="width:100%;"><strong>Loaded venues</strong></div>
+      <div class="small" style="width:100%;"><strong>Remaining venues</strong></div>
       <ol id="venueList" class="list"></ol>
     </div>
   </div>
 
 <script>
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
-
-  // Multiple public Overpass endpoints (mirrors) to reduce 504 pain.
   const OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -115,7 +110,11 @@
     venueList: document.getElementById("venueList"),
   };
 
+  // Full set loaded from Overpass (deduped/shuffled)
   let venues = [];
+  // Remaining pool (no repeats): we draw from this and remove winners
+  let remaining = [];
+
   let currentAngle = 0;
   let spinning = false;
 
@@ -133,18 +132,13 @@
     return { lat: +data[0].lat, lon: +data[0].lon };
   }
 
-  // Lighter query than before:
-  // - Use a single union per type group (still node/way/relation).
-  // - Keep strict takeaway/takeout.
-  // - Exclude cuisine that looks like juice/smoothie bars.
+  // Lighter query + strict takeaway/takeout + exclude juice/smoothie cuisine
   function overpassQuery(lat, lon, r) {
     const EXCL = "juice|smoothie";
-
     return `
       [out:json][timeout:25];
       (
         nwr(around:${r},${lat},${lon})[amenity="fast_food"][cuisine!~"${EXCL}"];
-
         nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"][cuisine!~"${EXCL}"];
         nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"][cuisine!~"${EXCL}"];
       );
@@ -152,20 +146,17 @@
     `;
   }
 
-  function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
-  }
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  async function postOverpassWithRetry(query, endpointLabel) {
-    // Retry policy: try up to 2 attempts per endpoint, then move on
+  async function postOverpassWithRetry(query, endpointUrl) {
     const maxAttempts = 2;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), 28000); // hard timeout client-side
+      const timeout = setTimeout(() => ctrl.abort(), 28000);
 
       try {
-        const res = await fetch(endpointLabel, {
+        const res = await fetch(endpointUrl, {
           method: "POST",
           headers: {
             "Content-Type": "text/plain;charset=UTF-8",
@@ -177,28 +168,25 @@
 
         clearTimeout(timeout);
 
-        // Overpass overloads: 429, 504, 502, 503 are common.
         if (!res.ok) {
           const retryable = [429, 502, 503, 504].includes(res.status);
           if (retryable && attempt < maxAttempts) {
             await sleep(800 * attempt);
             continue;
           }
-          throw new Error(`Overpass failed ${res.status} (${endpointLabel})`);
+          throw new Error(`Overpass failed ${res.status} (${new URL(endpointUrl).host})`);
         }
 
         return await res.json();
       } catch (err) {
         clearTimeout(timeout);
+        const isAbort = err && err.name === "AbortError";
+        const isNetwork = err instanceof TypeError;
 
-        // Abort or network error: treat as retryable
-        const isAbort = err && (err.name === "AbortError");
-        if ((isAbort || err instanceof TypeError) && attempt < maxAttempts) {
+        if ((isAbort || isNetwork) && attempt < maxAttempts) {
           await sleep(800 * attempt);
           continue;
         }
-
-        // If final attempt fails, rethrow
         throw err;
       }
     }
@@ -207,7 +195,6 @@
   async function fetchVenues(lat, lon, r) {
     const q = overpassQuery(lat, lon, r);
 
-    // Try each endpoint in order
     let data = null;
     let lastErr = null;
 
@@ -220,7 +207,7 @@
         lastErr = e;
       }
     }
-    if (!data) throw lastErr || new Error("Overpass failed");
+    if (!data) throw (lastErr || new Error("Overpass failed"));
 
     const out = [];
     for (const e of (data.elements || [])) {
@@ -234,7 +221,7 @@
       out.push({ name, lat: lat2, lon: lon2 });
     }
 
-    // Deduplicate
+    // Deduplicate by name + rounded coords
     const seen = new Set();
     const dedup = [];
     for (const v of out) {
@@ -251,6 +238,10 @@
     }
 
     return dedup;
+  }
+
+  function updateVenueList() {
+    els.venueList.innerHTML = remaining.map(v => `<li>${v.name}</li>`).join("");
   }
 
   function drawWheel() {
@@ -270,16 +261,18 @@
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    if (!venues.length) {
+    if (!remaining.length) {
       ctx.fillStyle = "#6b7280";
-      ctx.font = "28px system-ui";
+      ctx.font = "22px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("Load venues", cx, cy);
+      ctx.fillText("No venues left", cx, cy - 14);
+      ctx.font = "16px system-ui";
+      ctx.fillText("Click Load venues to reset", cx, cy + 14);
       return;
     }
 
-    const n = venues.length;
+    const n = remaining.length;
     const slice = (Math.PI * 2) / n;
 
     for (let i = 0; i < n; i++) {
@@ -297,7 +290,7 @@
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Label
+      // Label (short)
       const mid = (a0 + a1) / 2;
       const tx = cx + Math.cos(mid) * (r * 0.62);
       const ty = cy + Math.sin(mid) * (r * 0.62);
@@ -309,7 +302,7 @@
       ctx.font = "16px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const label = venues[i].name.length > 18 ? venues[i].name.slice(0, 17) + "…" : venues[i].name;
+      const label = remaining[i].name.length > 18 ? remaining[i].name.slice(0, 17) + "…" : remaining[i].name;
       ctx.fillText(label, 0, 0);
       ctx.restore();
     }
@@ -326,7 +319,19 @@
   }
 
   function spinWheel(durationMs = 3000) {
-    if (spinning || venues.length < 2) return;
+    if (spinning || remaining.length < 1) return;
+
+    if (remaining.length === 1) {
+      // Auto-pick last one (still "no repeats")
+      const last = remaining[0];
+      remaining = [];
+      revealPick(last);
+      els.spin.disabled = true;
+      drawWheel();
+      updateVenueList();
+      setStatus("That was the last remaining venue. Load venues to reset.", "ok");
+      return;
+    }
 
     spinning = true;
     els.spin.disabled = true;
@@ -352,21 +357,39 @@
         els.spin.disabled = false;
         els.load.disabled = false;
 
-        const pick = venues[Math.floor(Math.random() * venues.length)];
-        const mapsUrl =
-          `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pick.name)}@${pick.lat},${pick.lon}`;
+        // Pick WITHOUT repeats: remove from remaining pool
+        const idx = Math.floor(Math.random() * remaining.length);
+        const pick = remaining.splice(idx, 1)[0];
 
-        els.picked.innerHTML = `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">${pick.name}</a>`;
-        els.links.innerHTML = `
-          <a href="https://www.google.com/maps/dir/?api=1&destination=${pick.lat},${pick.lon}&travelmode=walking"
-             target="_blank" rel="noopener noreferrer">
-            Walking directions
-          </a>
-        `;
+        revealPick(pick);
+        drawWheel();
+        updateVenueList();
+
+        if (remaining.length < 1) {
+          els.spin.disabled = true;
+          setStatus("No venues left. Click Load venues to reset.", "ok");
+        } else {
+          setStatus(`Picked 1. ${remaining.length} remaining.`, "ok");
+        }
       }
     }
 
     requestAnimationFrame(frame);
+  }
+
+  function revealPick(pick) {
+    const mapsUrl =
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pick.name)}@${pick.lat},${pick.lon}`;
+
+    els.picked.innerHTML =
+      `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">${pick.name}</a>`;
+
+    els.links.innerHTML = `
+      <a href="https://www.google.com/maps/dir/?api=1&destination=${pick.lat},${pick.lon}&travelmode=walking"
+         target="_blank" rel="noopener noreferrer">
+        Walking directions
+      </a>
+    `;
   }
 
   els.load.onclick = async () => {
@@ -381,21 +404,22 @@
       setStatus(`Fetching venues within ${r}m…`, "warn");
 
       venues = await fetchVenues(lat, lon, r);
+      remaining = venues.slice();        // reset no-repeat pool
+      currentAngle = 0;
 
+      updateVenueList();
       drawWheel();
-      els.venueList.innerHTML = venues.map(v => `<li>${v.name}</li>`).join("");
 
-      if (!venues.length) {
+      els.picked.textContent = "Ready. Hit Spin 🎯";
+      els.links.innerHTML = "";
+
+      if (!remaining.length) {
         setStatus("No venues found (strict takeaway + juice exclusion). Try 750m or 1km.", "err");
-        els.picked.textContent = "Nothing picked yet";
-        els.links.innerHTML = "";
         return;
       }
 
-      setStatus(`Loaded ${venues.length} venues`, "ok");
-      els.spin.disabled = (venues.length < 2);
-      els.picked.textContent = "Ready. Hit Spin 🎯";
-      els.links.innerHTML = "";
+      setStatus(`Loaded ${remaining.length} venues (no repeats enabled)`, "ok");
+      els.spin.disabled = (remaining.length < 1);
     } catch (e) {
       setStatus(e.message || String(e), "err");
     } finally {
@@ -408,3 +432,4 @@
 </script>
 </body>
 </html>
+```
