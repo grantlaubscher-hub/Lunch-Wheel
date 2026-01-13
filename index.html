@@ -29,7 +29,7 @@
     .err { color: #991b1b; }
 
     .wheelwrap { display: grid; gap: 10px; justify-items: center; }
-    canvas { width: 360px; height: 360px; border-radius: 999px; border: 1px solid #e5e7eb; }
+    canvas { width: 360px; height: 360px; border-radius: 999px; border: 1px solid #e5e7eb; background: transparent; }
     .pointer {
       width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent;
       border-bottom: 18px solid #111827; margin-bottom: -10px;
@@ -47,12 +47,13 @@
 </head>
 
 <body>
-  <h1>Lunch Wheel 🍔</h1>
+  <h1>Lunch Wheel 🍊</h1>
   <div class="small">
-    Random takeaway spinner near 260 Queen Street. Default radius is <strong>500m</strong>.
+    Default radius <strong>500m</strong> from 260 Queen Street.
     <br/>
-    Excludes “juice bar” style venues using a better rule:
-    <code>amenity=juice_bar</code> and <code>shop=juice</code> are excluded (no cuisine-based blocking, so places like Grazegrind can still appear).
+    Includes restaurant/cafe with <code>cuisine=*</code> (helps missing-takeaway-tag venues).
+    Excludes obvious juice bars again (name contains “juice”, or <code>amenity=juice_bar</code>, or <code>shop=juice</code>).
+    De-duped by venue name.
   </div>
 
   <div class="row" style="margin-top:14px;">
@@ -72,12 +73,7 @@
       </div>
 
       <div id="status" class="status warn" style="margin-top:10px;">Load venues to begin</div>
-
       <button id="spin" disabled style="margin-top:10px;">Spin 🎯</button>
-
-      <div class="small" style="margin-top:10px;">
-        Duplicates: de-duped by <code>name</code> (case/punctuation-insensitive), so “KFC” only appears once.
-      </div>
     </div>
 
     <div class="card wheelwrap">
@@ -130,6 +126,11 @@
       .replace(/\s+/g, " ");
   }
 
+  function isJuiceBarLike(venue) {
+    const n = normalizeName(venue.name);
+    return n.includes("juice"); // keep smoothie-friendly cafes (no "smoothie" blocking)
+  }
+
   async function geocodeAddress(address) {
     const url = `${NOMINATIM}?q=${encodeURIComponent(address)}&format=json&limit=1`;
     const res = await fetch(url, { headers: { "Accept": "application/json" } });
@@ -139,17 +140,6 @@
     return { lat: +data[0].lat, lon: +data[0].lon };
   }
 
-  /**
-   * Better “exclude juice bars” rule:
-   *  - exclude amenity=juice_bar
-   *  - exclude shop=juice
-   *
-   * IMPORTANT: We DO NOT exclude by cuisine anymore (so smoothie/juice *cuisine* won't automatically remove cafes like Grazegrind).
-   *
-   * Still “takeaway-ish” rules:
-   *  - include fast_food
-   *  - include restaurant/cafe only if takeaway/takeout yes/only
-   */
   function overpassQuery(lat, lon, r) {
     return `
       [out:json][timeout:25];
@@ -158,6 +148,9 @@
 
         nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeaway~"^(yes|only)$"][amenity!="juice_bar"][shop!="juice"];
         nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][takeout~"^(yes|only)$"][amenity!="juice_bar"][shop!="juice"];
+
+        // include restaurant/cafe with cuisine=*
+        nwr(around:${r},${lat},${lon})[amenity~"^(restaurant|cafe)$"][cuisine][amenity!="juice_bar"][shop!="juice"];
       );
       out center tags;
     `;
@@ -238,9 +231,12 @@
       raw.push({ name, lat: lat2, lon: lon2 });
     }
 
-    // De-dupe by NORMALIZED NAME only (so "KFC" won't appear twice).
+    // client-side remove "juice" by name
+    const filtered = raw.filter(v => !isJuiceBarLike(v));
+
+    // de-dupe by normalized name
     const byName = new Map();
-    for (const v of raw) {
+    for (const v of filtered) {
       const key = normalizeName(v.name);
       if (!key) continue;
       if (!byName.has(key)) byName.set(key, v);
@@ -248,7 +244,7 @@
 
     const dedup = Array.from(byName.values());
 
-    // Shuffle
+    // shuffle
     for (let i = dedup.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [dedup[i], dedup[j]] = [dedup[j], dedup[i]];
@@ -261,71 +257,200 @@
     els.venueList.innerHTML = venues.map(v => `<li>${v.name}</li>`).join("");
   }
 
+  // ---- ORANGE WHEEL LOOK ----
+  // We keep wedges for readability, but we overlay an "orange peel" look:
+  // - orange radial gradient
+  // - subtle peel texture dots
+  // - segment "pith" lines
+  // - small green leaf + stem at top
+  function drawOrangeBase(ctx, cx, cy, radius) {
+    // Orange peel gradient
+    const g = ctx.createRadialGradient(cx - radius*0.25, cy - radius*0.25, radius*0.2, cx, cy, radius);
+    g.addColorStop(0, "#ffd08a");
+    g.addColorStop(0.55, "#ff8a00");
+    g.addColorStop(1, "#d85a00");
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    // Peel texture (deterministic-ish dots)
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.clip();
+
+    // seedable pattern based on venue count so it doesn't "flicker" too much
+    const dotCount = 260;
+    for (let i = 0; i < dotCount; i++) {
+      const a = (i * 0.6180339887) * Math.PI * 2; // golden-angle-ish
+      const rr = Math.sqrt((i % dotCount) / dotCount) * radius;
+      const x = cx + Math.cos(a) * rr;
+      const y = cy + Math.sin(a) * rr;
+
+      const d = 1 + (i % 3); // 1-3px
+      ctx.fillStyle = (i % 2 === 0) ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+      ctx.beginPath();
+      ctx.arc(x, y, d, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Outer rind
+    ctx.strokeStyle = "rgba(90,30,0,0.22)";
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius - 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner highlight ring
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius - 14, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function drawLeaf(ctx, cx, cy, radius) {
+    // Stem
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 2); // top
+    const stemY = -radius + 20;
+
+    ctx.strokeStyle = "#5b3a1a";
+    ctx.lineWidth = 8;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-6, stemY + 8);
+    ctx.lineTo(-2, stemY - 10);
+    ctx.stroke();
+
+    // Leaf
+    const lg = ctx.createLinearGradient(0, stemY - 25, 0, stemY + 15);
+    lg.addColorStop(0, "#34d399");
+    lg.addColorStop(1, "#15803d");
+
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.ellipse(18, stemY - 10, 34, 18, -0.55, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(18, stemY - 10, 34, 18, -0.55, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Leaf vein
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(4, stemY - 8);
+    ctx.lineTo(34, stemY - 16);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   function drawWheel() {
     const ctx = els.wheel.getContext("2d");
     const W = els.wheel.width;
     const cx = W / 2, cy = W / 2;
-    const r = W / 2 - 12;
+    const radius = W / 2 - 12;
 
     ctx.clearRect(0, 0, W, W);
 
-    // Background circle
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffffff";
-    ctx.fill();
-    ctx.strokeStyle = "#e5e7eb";
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    // Orange base (always)
+    drawOrangeBase(ctx, cx, cy, radius);
 
     if (!venues.length) {
-      ctx.fillStyle = "#6b7280";
+      ctx.fillStyle = "rgba(17,24,39,0.75)";
       ctx.font = "28px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Load venues", cx, cy);
+      drawLeaf(ctx, cx, cy, radius);
       return;
     }
 
+    // Wedges overlay (subtle) so it still reads like a wheel
     const n = venues.length;
     const slice = (Math.PI * 2) / n;
 
+    // Segment lines (pith)
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 4;
+
+    for (let i = 0; i < n; i++) {
+      const a = currentAngle + i * slice;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * (radius - 20), cy + Math.sin(a) * (radius - 20));
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Center pith circle
+    ctx.beginPath();
+    ctx.arc(cx, cy, 48, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    // Labels
     for (let i = 0; i < n; i++) {
       const a0 = currentAngle + i * slice;
       const a1 = a0 + slice;
-
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, r, a0, a1);
-      ctx.closePath();
-      ctx.fillStyle = (i % 2 === 0) ? "#f3f4f6" : "#e5e7eb";
-      ctx.fill();
-
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
       const mid = (a0 + a1) / 2;
-      const tx = cx + Math.cos(mid) * (r * 0.62);
-      const ty = cy + Math.sin(mid) * (r * 0.62);
+
+      const tx = cx + Math.cos(mid) * (radius * 0.62);
+      const ty = cy + Math.sin(mid) * (radius * 0.62);
 
       ctx.save();
       ctx.translate(tx, ty);
       ctx.rotate(mid);
-      ctx.fillStyle = "#111827";
+
+      // readable label pill
+      const label = venues[i].name.length > 18 ? venues[i].name.slice(0, 17) + "…" : venues[i].name;
+
       ctx.font = "16px system-ui";
+      const m = ctx.measureText(label);
+      const padX = 10, padY = 7;
+      const bw = m.width + padX * 2;
+      const bh = 22 + padY;
+
+      ctx.fillStyle = "rgba(255,255,255,0.78)";
+      ctx.strokeStyle = "rgba(0,0,0,0.10)";
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      const x = -bw / 2, y = -bh / 2;
+      const r = 10;
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + bw, y, x + bw, y + bh, r);
+      ctx.arcTo(x + bw, y + bh, x, y + bh, r);
+      ctx.arcTo(x, y + bh, x, y, r);
+      ctx.arcTo(x, y, x + bw, y, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#111827";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const label = venues[i].name.length > 18 ? venues[i].name.slice(0, 17) + "…" : venues[i].name;
       ctx.fillText(label, 0, 0);
+
       ctx.restore();
     }
 
-    // Center cap
-    ctx.beginPath();
-    ctx.arc(cx, cy, 42, 0, Math.PI * 2);
-    ctx.fillStyle = "#111827";
-    ctx.fill();
+    // Leaf + stem
+    drawLeaf(ctx, cx, cy, radius);
   }
 
   function easeOutCubic(t) {
@@ -344,7 +469,7 @@
     const start = performance.now();
     const startAngle = currentAngle;
 
-    const rotations = 5 + Math.random() * 2; // 5–7 turns
+    const rotations = 5 + Math.random() * 2;
     const endAngle = startAngle + rotations * Math.PI * 2;
 
     function frame(now) {
@@ -403,7 +528,7 @@
         return;
       }
 
-      setStatus(`Loaded ${venues.length} venues (de-duped by name)`, "ok");
+      setStatus(`Loaded ${venues.length} venues`, "ok");
       els.spin.disabled = false;
     } catch (e) {
       setStatus(e.message || String(e), "err");
